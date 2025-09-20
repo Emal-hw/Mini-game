@@ -114,13 +114,12 @@ app.ticker.add((delta) => {
     startBossLevel();
   }
 
-  // Таймер
-  setInterval(() => {
-    if (gameOver) return;
-    timer--;
-    timerText.text = `Time: ${timer}`;
-    if (timer <= 0) endGame(false);
-  }, 1000); // оновлення щосекунди
+  let remainingTime = 60;
+  let timerId = setInterval(() => {
+    remainingTime--;
+    timerText.text = `Time: ${remainingTime}`;
+    if (remainingTime <= 0) clearInterval(timerId);
+  }, 1000);
 
   // Поразка через нестачу куль
   if (bulletsLeft === 0 && asteroids.length > 0 && level === 1) {
