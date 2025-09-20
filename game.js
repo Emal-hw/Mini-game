@@ -5,13 +5,20 @@ const app = new PIXI.Application({
 });
 document.body.appendChild(app.view);
 
+// --- Ігрові змінні ---
 let level = 1;
 let bulletsLeft = 10;
-let timer = 60;
+let timeLeft = 60;
 let score = 0;
 let gameOver = false;
 let bossHP = 4;
 
+const bullets = [];
+const asteroids = [];
+const bossBullets = [];
+const keys = {};
+
+// --- Гравець ---
 const player = new PIXI.Graphics();
 player.beginFill(0x00ff00);
 player.drawRect(0, 0, 60, 20);
@@ -20,29 +27,20 @@ player.x = app.screen.width / 2 - 30;
 player.y = app.screen.height - 50;
 app.stage.addChild(player);
 
-const bullets = [];
-const asteroids = [];
-const bossBullets = [];
-
-const timerText = new PIXI.Text(`Time: ${timer}`, {
+// --- UI ---
+const timerText = new PIXI.Text(`Time: ${timeLeft}`, {
   fill: "white",
   fontSize: 24,
 });
-timerText.x = 10;
-timerText.y = 10;
+timerText.position.set(10, 10);
 app.stage.addChild(timerText);
 
-const message = new PIXI.Text("", {
-  fill: "white",
-  fontSize: 48,
-  align: "center",
-});
+const message = new PIXI.Text("", { fill: "white", fontSize: 48 });
 message.anchor.set(0.5);
-message.x = app.screen.width / 2;
-message.y = app.screen.height / 2;
+message.position.set(app.screen.width / 2, app.screen.height / 2);
 app.stage.addChild(message);
 
-const keys = {};
+// --- Керування ---
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
   if (e.code === "Space" && bulletsLeft > 0 && !gameOver) {
@@ -50,12 +48,11 @@ window.addEventListener("keydown", (e) => {
     bulletsLeft--;
   }
 });
-window.addEventListener("keyup", (e) => {
-  keys[e.code] = false;
-});
+window.addEventListener("keyup", (e) => (keys[e.code] = false));
 
-function spawnAsteroids() {
-  for (let i = 0; i < 5; i++) {
+// --- Спавн астероїдів ---
+function spawnAsteroids(count = 5) {
+  for (let i = 0; i < count; i++) {
     const asteroid = new PIXI.Graphics();
     asteroid.beginFill(0xff0000);
     asteroid.drawCircle(0, 0, 30);
@@ -68,6 +65,7 @@ function spawnAsteroids() {
 }
 spawnAsteroids();
 
+// --- Постріл ---
 function shootBullet() {
   const bullet = new PIXI.Graphics();
   bullet.beginFill(0xffffff);
@@ -79,7 +77,19 @@ function shootBullet() {
   bullets.push(bullet);
 }
 
-app.ticker.add((delta) => {
+// --- Таймер ---
+let timerId = setInterval(() => {
+  if (gameOver) return;
+  timeLeft--;
+  timerText.text = `Time: ${timeLeft}`;
+  if (timeLeft <= 0) {
+    clearInterval(timerId);
+    endGame(false);
+  }
+}, 1000);
+
+// --- Основний цикл ---
+app.ticker.add(() => {
   if (gameOver) return;
 
   // Рух гравця
@@ -88,45 +98,39 @@ app.ticker.add((delta) => {
     player.x = Math.min(app.screen.width - 60, player.x + 5);
 
   // Рух куль
-  bullets.forEach((bullet, index) => {
+  bullets.forEach((bullet, i) => {
     bullet.y -= 10;
     if (bullet.y < 0) {
       app.stage.removeChild(bullet);
-      bullets.splice(index, 1);
+      bullets.splice(i, 1);
     }
   });
 
-  // Перевірка зіткнень
-  bullets.forEach((bullet, bIndex) => {
-    asteroids.forEach((asteroid, aIndex) => {
+  // Перевірка зіткнень з астероїдами
+  bullets.forEach((bullet, bi) => {
+    asteroids.forEach((asteroid, ai) => {
       if (hitTest(bullet, asteroid)) {
         app.stage.removeChild(bullet);
         app.stage.removeChild(asteroid);
-        bullets.splice(bIndex, 1);
-        asteroids.splice(aIndex, 1);
+        bullets.splice(bi, 1);
+        asteroids.splice(ai, 1);
         score++;
       }
     });
   });
 
-  // Перевірка перемоги
+  // Якщо всі астероїди знищені
   if (asteroids.length === 0 && level === 1) {
     startBossLevel();
   }
 
-  let remainingTime = 60;
-  let timerId = setInterval(() => {
-    remainingTime--;
-    timerText.text = `Time: ${remainingTime}`;
-    if (remainingTime <= 0) clearInterval(timerId);
-  }, 1000);
-
-  // Поразка через нестачу куль
+  // Якщо закінчились кулі
   if (bulletsLeft === 0 && asteroids.length > 0 && level === 1) {
     endGame(false);
   }
 });
 
+// --- Колізії ---
 function hitTest(a, b) {
   const ab = a.getBounds();
   const bb = b.getBounds();
@@ -138,11 +142,11 @@ function hitTest(a, b) {
   );
 }
 
+// --- Рівень з босом ---
 function startBossLevel() {
   level = 2;
   bulletsLeft = 10;
-  timer = 60;
-  timerText.text = `Time: ${timer}`;
+  bossHP = 4;
   message.text = "";
 
   const boss = new PIXI.Graphics();
@@ -157,10 +161,10 @@ function startBossLevel() {
     fill: "red",
     fontSize: 24,
   });
-  hpBar.x = boss.x;
-  hpBar.y = boss.y - 30;
+  hpBar.position.set(boss.x, boss.y - 30);
   app.stage.addChild(hpBar);
 
+  // Стріляє бос
   setInterval(() => {
     if (gameOver) return;
     const bossBullet = new PIXI.Graphics();
@@ -173,42 +177,44 @@ function startBossLevel() {
     bossBullets.push(bossBullet);
   }, 2000);
 
+  // Логіка боса
   app.ticker.add(() => {
-    // Бос рухається
+    if (gameOver) return;
+
     boss.x += Math.sin(app.ticker.lastTime / 500) * 2;
     hpBar.x = boss.x;
 
-    // Кулі Боса
-    bossBullets.forEach((bullet, index) => {
+    // Кулі боса
+    bossBullets.forEach((bullet, i) => {
       bullet.y += 5;
       if (bullet.y > app.screen.height) {
         app.stage.removeChild(bullet);
-        bossBullets.splice(index, 1);
+        bossBullets.splice(i, 1);
       }
       if (hitTest(bullet, player)) {
         endGame(false);
       }
     });
 
-    // Перевірка попадання в Боса
-    bullets.forEach((bullet, bIndex) => {
+    // Попадання в боса
+    bullets.forEach((bullet, bi) => {
       if (hitTest(bullet, boss)) {
         app.stage.removeChild(bullet);
-        bullets.splice(bIndex, 1);
+        bullets.splice(bi, 1);
         bossHP--;
         hpBar.text = `Boss HP: ${bossHP}`;
         if (bossHP <= 0) endGame(true);
       }
     });
 
-    // Перевірка зіткнення куль
-    bullets.forEach((pBullet, pIndex) => {
-      bossBullets.forEach((bBullet, bIndex) => {
+    // Перехоплення куль
+    bullets.forEach((pBullet, pi) => {
+      bossBullets.forEach((bBullet, bi) => {
         if (hitTest(pBullet, bBullet)) {
           app.stage.removeChild(pBullet);
           app.stage.removeChild(bBullet);
-          bullets.splice(pIndex, 1);
-          bossBullets.splice(bIndex, 1);
+          bullets.splice(pi, 1);
+          bossBullets.splice(bi, 1);
         }
       });
     });
@@ -219,21 +225,21 @@ function startBossLevel() {
   });
 }
 
+// --- Кінець гри ---
 function endGame(win) {
   gameOver = true;
   message.text = win ? "YOU WIN" : "YOU LOSE";
 }
+
+// --- Кнопка рестарту ---
 const startButton = new PIXI.Text("START NEW GAME", {
   fill: "blue",
   fontSize: 36,
   fontWeight: "bold",
 });
 startButton.anchor.set(0.5);
-startButton.x = app.screen.width / 2;
-startButton.y = app.screen.height - 30;
+startButton.position.set(app.screen.width / 2, app.screen.height - 30);
 startButton.interactive = true;
 startButton.buttonMode = true;
-startButton.on("pointerdown", () => {
-  location.reload(); // або виклик функції resetGame()
-});
+startButton.on("pointerdown", () => location.reload());
 app.stage.addChild(startButton);
