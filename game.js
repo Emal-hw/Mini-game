@@ -115,11 +115,12 @@ app.ticker.add((delta) => {
   }
 
   // Таймер
-  if (app.ticker.lastTime % 60 < 1) {
+  setInterval(() => {
+    if (gameOver) return;
     timer--;
     timerText.text = `Time: ${timer}`;
     if (timer <= 0) endGame(false);
-  }
+  }, 1000); // оновлення щосекунди
 
   // Поразка через нестачу куль
   if (bulletsLeft === 0 && asteroids.length > 0 && level === 1) {
@@ -223,3 +224,17 @@ function endGame(win) {
   gameOver = true;
   message.text = win ? "YOU WIN" : "YOU LOSE";
 }
+const startButton = new PIXI.Text("START NEW GAME", {
+  fill: "blue",
+  fontSize: 36,
+  fontWeight: "bold",
+});
+startButton.anchor.set(0.5);
+startButton.x = app.screen.width / 2;
+startButton.y = app.screen.height - 30;
+startButton.interactive = true;
+startButton.buttonMode = true;
+startButton.on("pointerdown", () => {
+  location.reload(); // або виклик функції resetGame()
+});
+app.stage.addChild(startButton);
