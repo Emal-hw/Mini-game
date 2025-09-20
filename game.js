@@ -40,12 +40,21 @@ message.anchor.set(0.5);
 message.position.set(app.screen.width / 2, app.screen.height / 2);
 app.stage.addChild(message);
 
+// --- Відображення кількості патронів ---
+const bulletText = new PIXI.Text(`Кулі: ${bulletsLeft} / 10`, {
+  fill: "white",
+  fontSize: 24,
+});
+bulletText.position.set(app.screen.width - 200, 10);
+app.stage.addChild(bulletText);
+
 // --- Керування ---
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
   if (e.code === "Space" && bulletsLeft > 0 && !gameOver) {
     shootBullet();
     bulletsLeft--;
+    bulletText.text = `Кулі: ${bulletsLeft} / 10`; // Оновлення тексту патронів
   }
 });
 window.addEventListener("keyup", (e) => (keys[e.code] = false));
