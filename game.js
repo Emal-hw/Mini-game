@@ -5,6 +5,16 @@ const app = new PIXI.Application({
 });
 document.body.appendChild(app.view);
 
+// --- Розміри куль ---
+const BULLET_WIDTH = 10;
+const BULLET_HEIGHT = 15;
+
+// --- Завантаження текстур ---
+const asteroidTexture = PIXI.Texture.from("/assets/asteroid.png");
+const playerTexture = PIXI.Texture.from("/assets/mini.png");
+const bossTexture = PIXI.Texture.from("/assets/boss.png");
+const backgroundTexture = PIXI.Texture.from("/assets/space.png");
+
 // --- Ігрові змінні ---
 let level = 1;
 let bulletsLeft = 10;
@@ -18,13 +28,23 @@ const asteroids = [];
 const bossBullets = [];
 const keys = {};
 
+let timerId;
+let bossShootIntervalId;
+let bossTickerHandler;
+let bossSprite;
+let hpBar;
+
+// --- Фон гри ---
+const background = new PIXI.Sprite(backgroundTexture);
+background.width = app.screen.width;
+background.height = app.screen.height;
+app.stage.addChild(background);
+
 // --- Гравець ---
-const player = new PIXI.Graphics();
-player.beginFill(0x00ff00);
-player.drawRect(0, 0, 60, 20);
-player.endFill();
-player.x = app.screen.width / 2 - 30;
-player.y = app.screen.height - 50;
+const player = new PIXI.Sprite(playerTexture);
+player.x = app.screen.width / 2 - player.width / 2;
+// Піднімаємо гравця на 10 пікселів вище
+player.y = app.screen.height - 60;
 app.stage.addChild(player);
 
 // --- UI ---
@@ -35,87 +55,150 @@ const timerText = new PIXI.Text(`Time: ${timeLeft}`, {
 timerText.position.set(10, 10);
 app.stage.addChild(timerText);
 
-const message = new PIXI.Text("", { fill: "white", fontSize: 48 });
+const message = new PIXI.Text("", {
+  fill: "white",
+  fontSize: 48,
+});
 message.anchor.set(0.5);
 message.position.set(app.screen.width / 2, app.screen.height / 2);
 app.stage.addChild(message);
 
-// --- Відображення кількості патронів ---
-const bulletText = new PIXI.Text(`Кулі: ${bulletsLeft} / 10`, {
+const bulletText = new PIXI.Text(`Bullets: ${bulletsLeft} / 10`, {
   fill: "white",
   fontSize: 24,
 });
 bulletText.position.set(app.screen.width - 200, 10);
 app.stage.addChild(bulletText);
 
+// --- Кнопка рестарту ---
+const startButton = new PIXI.Text("START NEW GAME", {
+  fill: "blue",
+  fontSize: 36,
+  fontWeight: "bold",
+});
+startButton.anchor.set(0.5);
+startButton.position.set(app.screen.width / 2, app.screen.height - 30);
+startButton.interactive = true;
+startButton.buttonMode = true;
+app.stage.addChild(startButton);
+
 // --- Керування ---
 window.addEventListener("keydown", (e) => {
   keys[e.code] = true;
-  if (e.code === "Space" && bulletsLeft > 0 && !gameOver) {
+  if (
+    e.code === "Space" &&
+    bulletsLeft > 0 &&
+    !gameOver &&
+    startButton.visible === false
+  ) {
     shootBullet();
     bulletsLeft--;
-    bulletText.text = `Кулі: ${bulletsLeft} / 10`; // Оновлення тексту патронів
+    bulletText.text = `Bullets: ${bulletsLeft} / 10`;
   }
 });
 window.addEventListener("keyup", (e) => (keys[e.code] = false));
 
+// --- Функція для старту нової гри ---
+function startGame() {
+  // Очистити попередні інтервали і кадри боса
+  if (bossShootIntervalId) {
+    clearInterval(bossShootIntervalId);
+    bossShootIntervalId = null;
+  }
+  if (bossTickerHandler) {
+    app.ticker.remove(bossTickerHandler);
+    bossTickerHandler = null;
+  }
+
+  // Скинути змінні
+  level = 1;
+  bulletsLeft = 10;
+  timeLeft = 60;
+  score = 0;
+  bossHP = 4;
+  gameOver = false;
+
+  // Видалити старі об’єкти зі сцени
+  bullets.forEach((b) => app.stage.removeChild(b));
+  bullets.length = 0;
+
+  asteroids.forEach((a) => app.stage.removeChild(a));
+  asteroids.length = 0;
+
+  bossBullets.forEach((b) => app.stage.removeChild(b));
+  bossBullets.length = 0;
+
+  if (bossSprite) {
+    app.stage.removeChild(bossSprite);
+    bossSprite = null;
+  }
+  if (hpBar) {
+    app.stage.removeChild(hpBar);
+    hpBar = null;
+  }
+
+  // Оновити UI
+  bulletText.text = `Bullets: ${bulletsLeft} / 10`;
+  timerText.text = `Time: ${timeLeft}`;
+  message.text = "";
+  startButton.visible = false;
+
+  // Запустити астероїди та таймер
+  spawnAsteroids();
+  timerId = setInterval(() => {
+    if (gameOver) return;
+    timeLeft--;
+    timerText.text = `Time: ${timeLeft}`;
+    if (timeLeft <= 0) {
+      clearInterval(timerId);
+      endGame(false);
+    }
+  }, 1000);
+}
+
 // --- Спавн астероїдів ---
 function spawnAsteroids(count = 5) {
   for (let i = 0; i < count; i++) {
-    const asteroid = new PIXI.Graphics();
-    asteroid.beginFill(0xff0000);
-    asteroid.drawCircle(0, 0, 30);
-    asteroid.endFill();
+    const asteroid = new PIXI.Sprite(asteroidTexture);
     asteroid.x = Math.random() * (app.screen.width - 60) + 30;
     asteroid.y = Math.random() * 300 + 50;
     app.stage.addChild(asteroid);
     asteroids.push(asteroid);
   }
 }
-spawnAsteroids();
 
-// --- Постріл ---
+// --- Постріл гравця ---
 function shootBullet() {
   const bullet = new PIXI.Graphics();
   bullet.beginFill(0xffffff);
-  bullet.drawRect(0, 0, 5, 15);
+  bullet.drawRect(0, 0, BULLET_WIDTH, BULLET_HEIGHT);
   bullet.endFill();
-  bullet.x = player.x + 27;
+  bullet.x = player.x + player.width / 2 - BULLET_WIDTH / 2;
   bullet.y = player.y;
   app.stage.addChild(bullet);
   bullets.push(bullet);
 }
 
-// --- Таймер ---
-let timerId = setInterval(() => {
-  if (gameOver) return;
-  timeLeft--;
-  timerText.text = `Time: ${timeLeft}`;
-  if (timeLeft <= 0) {
-    clearInterval(timerId);
-    endGame(false);
-  }
-}, 1000);
-
 // --- Основний цикл ---
 app.ticker.add(() => {
-  if (gameOver) return;
+  if (gameOver || startButton.visible) return;
 
   // Рух гравця
   if (keys["ArrowLeft"]) player.x = Math.max(0, player.x - 5);
   if (keys["ArrowRight"])
-    player.x = Math.min(app.screen.width - 60, player.x + 5);
+    player.x = Math.min(app.screen.width - player.width, player.x + 5);
 
   // Рух куль
-  bullets.forEach((bullet, i) => {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const bullet = bullets[i];
     bullet.y -= 10;
     if (bullet.y < 0) {
       app.stage.removeChild(bullet);
       bullets.splice(i, 1);
     }
-  });
+  }
 
-  // Перевірка зіткнень з астероїдами
+  // Колізії з астероїдами
   bullets.forEach((bullet, bi) => {
     asteroids.forEach((asteroid, ai) => {
       if (hitTest(bullet, asteroid)) {
@@ -128,12 +211,10 @@ app.ticker.add(() => {
     });
   });
 
-  // Якщо всі астероїди знищені
   if (asteroids.length === 0 && level === 1) {
     startBossLevel();
   }
 
-  // Якщо закінчились кулі
   if (bulletsLeft === 0 && asteroids.length > 0 && level === 1) {
     endGame(false);
   }
@@ -158,43 +239,41 @@ function startBossLevel() {
   bossHP = 4;
   message.text = "";
 
-  const boss = new PIXI.Graphics();
-  boss.beginFill(0x0000ff);
-  boss.drawRect(0, 0, 100, 60);
-  boss.endFill();
-  boss.x = app.screen.width / 2 - 50;
-  boss.y = 100;
-  app.stage.addChild(boss);
+  bossSprite = new PIXI.Sprite(bossTexture);
+  bossSprite.x = app.screen.width / 2 - bossSprite.width / 2;
+  bossSprite.y = 100;
+  app.stage.addChild(bossSprite);
 
-  const hpBar = new PIXI.Text(`Boss HP: ${bossHP}`, {
+  hpBar = new PIXI.Text(`Boss HP: ${bossHP}`, {
     fill: "red",
     fontSize: 24,
   });
-  hpBar.position.set(boss.x, boss.y - 30);
+  hpBar.position.set(bossSprite.x, bossSprite.y - 30);
   app.stage.addChild(hpBar);
 
-  // Стріляє бос
-  setInterval(() => {
+  // Інтервал пострілів боса
+  bossShootIntervalId = setInterval(() => {
     if (gameOver) return;
     const bossBullet = new PIXI.Graphics();
     bossBullet.beginFill(0xffff00);
-    bossBullet.drawRect(0, 0, 5, 15);
+    bossBullet.drawRect(0, 0, BULLET_WIDTH, BULLET_HEIGHT);
     bossBullet.endFill();
-    bossBullet.x = boss.x + 47;
-    bossBullet.y = boss.y + 60;
+    bossBullet.x = bossSprite.x + bossSprite.width / 2 - BULLET_WIDTH / 2;
+    bossBullet.y = bossSprite.y + bossSprite.height;
     app.stage.addChild(bossBullet);
     bossBullets.push(bossBullet);
   }, 2000);
 
-  // Логіка боса
-  app.ticker.add(() => {
+  // Логіка руху й колізій боса
+  bossTickerHandler = () => {
     if (gameOver) return;
 
-    boss.x += Math.sin(app.ticker.lastTime / 500) * 2;
-    hpBar.x = boss.x;
+    bossSprite.x += Math.sin(app.ticker.lastTime / 500) * 2;
+    hpBar.x = bossSprite.x;
 
     // Кулі боса
-    bossBullets.forEach((bullet, i) => {
+    for (let i = bossBullets.length - 1; i >= 0; i--) {
+      const bullet = bossBullets[i];
       bullet.y += 5;
       if (bullet.y > app.screen.height) {
         app.stage.removeChild(bullet);
@@ -203,11 +282,11 @@ function startBossLevel() {
       if (hitTest(bullet, player)) {
         endGame(false);
       }
-    });
+    }
 
-    // Попадання в боса
+    // Попадання гравця в боса
     bullets.forEach((bullet, bi) => {
-      if (hitTest(bullet, boss)) {
+      if (hitTest(bullet, bossSprite)) {
         app.stage.removeChild(bullet);
         bullets.splice(bi, 1);
         bossHP--;
@@ -217,11 +296,11 @@ function startBossLevel() {
     });
 
     // Перехоплення куль
-    bullets.forEach((pBullet, pi) => {
-      bossBullets.forEach((bBullet, bi) => {
-        if (hitTest(pBullet, bBullet)) {
-          app.stage.removeChild(pBullet);
-          app.stage.removeChild(bBullet);
+    bullets.forEach((pB, pi) => {
+      bossBullets.forEach((bB, bi) => {
+        if (hitTest(pB, bB)) {
+          app.stage.removeChild(pB);
+          app.stage.removeChild(bB);
           bullets.splice(pi, 1);
           bossBullets.splice(bi, 1);
         }
@@ -231,24 +310,18 @@ function startBossLevel() {
     if (bulletsLeft === 0 && bossHP > 0) {
       endGame(false);
     }
-  });
+  };
+
+  app.ticker.add(bossTickerHandler);
 }
 
 // --- Кінець гри ---
 function endGame(win) {
   gameOver = true;
+  clearInterval(timerId);
   message.text = win ? "YOU WIN" : "YOU LOSE";
+  startButton.visible = true;
 }
 
-// --- Кнопка рестарту ---
-const startButton = new PIXI.Text("START NEW GAME", {
-  fill: "blue",
-  fontSize: 36,
-  fontWeight: "bold",
-});
-startButton.anchor.set(0.5);
-startButton.position.set(app.screen.width / 2, app.screen.height - 30);
-startButton.interactive = true;
-startButton.buttonMode = true;
-startButton.on("pointerdown", () => location.reload());
-app.stage.addChild(startButton);
+// --- Підписка на кнопку старту ---
+startButton.on("pointerdown", startGame);
