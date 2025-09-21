@@ -11,7 +11,7 @@ const BULLET_HEIGHT = 15;
 
 // --- Завантаження текстур ---
 const asteroidTexture = PIXI.Texture.from("/assets/asteroid.png");
-const playerTexture = PIXI.Texture.from("/assets/mini.png");
+const playerTexture = PIXI.Texture.from("/assets/Spaceship.png");
 const bossTexture = PIXI.Texture.from("/assets/boss.png");
 const backgroundTexture = PIXI.Texture.from("/assets/space.png");
 
